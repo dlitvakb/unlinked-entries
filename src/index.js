@@ -1,4 +1,11 @@
 import React, { useEffect } from 'react'
+import {
+  Router,
+  Switch,
+  Route
+} from 'react-router-dom'
+import Select from 'react-select'
+import { createMemoryHistory } from 'history'
 import { css } from 'emotion'
 import { render } from 'react-dom'
 import PropTypes from 'prop-types'
@@ -23,6 +30,8 @@ export class UnlinkedEntries extends React.Component {
     this.sdk = props.sdk
 
     this.state = {
+      selectedContentType: {label: 'All', value: undefined},
+      contentTypeOptions: [], 
       contentTypes: [],
       entries: [],
       loading: true,
@@ -32,6 +41,7 @@ export class UnlinkedEntries extends React.Component {
 
     this.onOpenEntry = this.onOpenEntry.bind(this)
     this.onRefetch = this.onRefetch.bind(this)
+    this.onSelectChange = this.onSelectChange.bind(this)
   }
 
   static propTypes = {
@@ -39,9 +49,15 @@ export class UnlinkedEntries extends React.Component {
   }
 
   async componentDidMount() {
+    const { contentTypeId } = this.props.match.params || {}
     const contentTypes = (await this.sdk.space.getContentTypes()).items
-    const entries = await this.fetchUnlinkedEntries(contentTypes)
-    this.setState({contentTypes, entries, loading: false})
+    const contentTypeOptions = (contentTypes || []).map((ct) => {
+      return {value: ct.sys.id, label: ct.name}
+    })
+    contentTypeOptions.unshift({value: undefined, label: 'All'})
+    const entries = await this.fetchUnlinkedEntries(contentTypes, contentTypeId)
+    const selectedContentType = contentTypeOptions.find(cto => cto.value === contentTypeId)
+    this.setState({contentTypeOptions, contentTypes, entries, selectedContentType, loading: false})
   }
 
   contentTypeFor(entry) {
@@ -52,12 +68,20 @@ export class UnlinkedEntries extends React.Component {
     return (entry.fields[(contentType || this.contentTypeFor(entry)).displayField] || {})[this.state.defaultLocale]
   }
 
-  async fetchUnlinkedEntries(contentTypes) {
+  async fetchUnlinkedEntries(contentTypes, selectedContentType) {
     let unlinkedEntries = []
     const { defaultLocale } = this.state
+
+    selectedContentType = selectedContentType || this.state.selectedContentType.value
+
     contentTypes = contentTypes || this.state.contentTypes
     for (let ctIndex = 0; ctIndex < contentTypes.length; ctIndex++) {
       const ct = contentTypes[ctIndex]
+
+      if (!!selectedContentType && contentTypes[ctIndex].sys.id !== selectedContentType) {
+        continue
+      }
+
       let linkFields = ct.fields.filter(f => f.type === 'Link' && f.linkType === 'Entry')
       let linkArrayFields = ct.fields.filter(f => f.type === 'Array' && f.items.type === 'Link' && f.items.linkType === 'Entry')
 
@@ -95,7 +119,7 @@ export class UnlinkedEntries extends React.Component {
   }
 
   async onOpenEntry(entry) {
-window.open(`https://app.contentful.com/spaces/${entry.sys.space.sys.id}/environments/${this.props.sdk.ids.environment}/entries/${entry.sys.id}`, '_blank')
+    window.open(`https://app.contentful.com/spaces/${entry.sys.space.sys.id}/environments/${this.props.sdk.ids.environment}/entries/${entry.sys.id}`, '_blank')
   }
 
   async onRefetch() {
@@ -104,13 +128,23 @@ window.open(`https://app.contentful.com/spaces/${entry.sys.space.sys.id}/environ
     this.setState({entries, updating: false})
   }
 
-  render() {
-    const { loading, updating } = this.state
+  async onSelectChange(selectedContentType) {
+    await this.props.sdk.navigator.openPageExtension({ path: `/${selectedContentType.value}` });
+    this.setState({selectedContentType, updating: true})
+    const entries = await this.fetchUnlinkedEntries(this.state.contentTypes, selectedContentType.value)
+    this.setState({entries, updating: false})
+  }
 
+  render() {
+    const { loading, updating, selectedContentType, contentTypeOptions } = this.state
 
     return (
       <>
         <Heading>Unlinked Entries</Heading>
+
+        { !loading && (
+          <Select options={contentTypeOptions} isSearchable={true} value={selectedContentType} onChange={this.onSelectChange} />
+        )}
 
         { loading && (<small><Spinner /> Loading entries...</small>)}
         { updating && (<small><Spinner /> Updating entry list...</small>)}
@@ -153,6 +187,35 @@ window.open(`https://app.contentful.com/spaces/${entry.sys.space.sys.id}/environ
   }
 }
 
+export class PageExtension extends React.Component {
+  constructor(props) {
+    super(props);
+    this.history = createMemoryHistory({
+      initialEntries: [props.sdk.parameters.invocation.path]
+    });
+    this.history.listen(location => {
+      this.props.sdk.navigator.openPageExtension({ path: location.pathname });
+    });
+  }
+
+  render = () => {
+    return (
+      <div className="f36-margin--l">
+        <Router history={this.history}>
+          <Switch>
+            <Route path="/" exact render={(props) => <UnlinkedEntries {...this.props} {...props} />} />
+            <Route path="/:contentTypeId" render={(props) => <UnlinkedEntries {...this.props} {...props} />} />
+          </Switch>
+        </Router>
+      </div>
+    );
+  };
+}
+
+PageExtension.propTypes = {
+  sdk: PropTypes.object.isRequired
+};
+
 export function SidebarExtension(props) {
   useEffect(() => {
     return props.sdk.window.startAutoResizer()
@@ -162,7 +225,7 @@ export function SidebarExtension(props) {
     <Button
       testId="open-page-extension"
       onClick={() => {
-        props.sdk.navigator.openPageExtension({ path: '/' })
+        props.sdk.navigator.openPageExtension({ path: `/${props.sdk.contentType.sys.id}` })
       }}>
       Open page extension
     </Button>
@@ -175,7 +238,7 @@ SidebarExtension.propTypes = {
 
 init(sdk => {
   if (sdk.location.is(locations.LOCATION_PAGE)) {
-    render(<UnlinkedEntries sdk={sdk} />, document.getElementById('root'))
+    render(<PageExtension sdk={sdk} />, document.getElementById('root'))
   } else if (sdk.location.is(locations.LOCATION_ENTRY_SIDEBAR)) {
     render(<SidebarExtension sdk={sdk} />, document.getElementById('root'))
   } else {
