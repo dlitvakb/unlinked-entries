@@ -129,7 +129,7 @@ export class UnlinkedEntries extends React.Component {
   }
 
   async onSelectChange(selectedContentType) {
-    await this.props.sdk.navigator.openPageExtension({ path: `/${selectedContentType.value}` });
+    await this.props.sdk.navigator.openPageExtension({ path: (!selectedContentType.value ? '/' : `/${selectedContentType.value}`) });
     this.setState({selectedContentType, updating: true})
     const entries = await this.fetchUnlinkedEntries(this.state.contentTypes, selectedContentType.value)
     this.setState({entries, updating: false})
