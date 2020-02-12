@@ -86,7 +86,7 @@ export class UnlinkedEntries extends React.Component {
       let linkArrayFields = ct.fields.filter(f => f.type === 'Array' && f.items.type === 'Link' && f.items.linkType === 'Entry')
 
       const totalEntries = (await this.sdk.space.getEntries({content_type: ct.sys.id, limit: 0})).total
-      const perPage = 1000
+      const perPage = 500
       const totalPages = Math.floor(totalEntries / perPage)
       for (let page = 0; page <= totalPages; page++) {
         try {
