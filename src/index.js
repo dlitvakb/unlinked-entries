@@ -89,28 +89,38 @@ export class UnlinkedEntries extends React.Component {
       const perPage = 1000
       const totalPages = Math.floor(totalEntries / perPage)
       for (let page = 0; page <= totalPages; page++) {
-        let entries = (await this.sdk.space.getEntries({content_type: ct.sys.id, limit: perPage, skip: page * perPage})).items
-        for (let eIndex = 0; eIndex < entries.length; eIndex++) {
-          const e = entries[eIndex]
+        try {
+          let entries = (await this.sdk.space.getEntries({content_type: ct.sys.id, limit: perPage, skip: page * perPage})).items
+          for (let eIndex = 0; eIndex < entries.length; eIndex++) {
+            const e = entries[eIndex]
 
-          // if it has any children - it's not unlinked
-          if (linkFields.some(f => {
-            return e.fields[f.id] && e.fields[f.id][defaultLocale]
-          })) {
-           continue
-          }
-          if (linkArrayFields.some(f => {
-            return e.fields[f.id] && e.fields[f.id][defaultLocale] && e.fields[f.id][defaultLocale].some(l => !!l.sys.id)
-          })) {
-            continue
-          }
+            // if it has any children - it's not unlinked
+            if (linkFields.some(f => {
+              return e.fields[f.id] && e.fields[f.id][defaultLocale]
+            })) {
+             continue
+            }
+            if (linkArrayFields.some(f => {
+              return e.fields[f.id] && e.fields[f.id][defaultLocale] && e.fields[f.id][defaultLocale].some(l => !!l.sys.id)
+            })) {
+              continue
+            }
 
-          // if it has any inbound links - it's not unlinked
-          if ((await this.sdk.space.getEntries({links_to_entry: e.sys.id})).total > 0) {
-            continue
-          }
+            try {
+              // if it has any inbound links - it's not unlinked
+              if ((await this.sdk.space.getEntries({links_to_entry: e.sys.id})).total > 0) {
+                continue
+              }
+            } catch(err) {
+              console.log(err)
+              continue
+            }
 
-          unlinkedEntries.push(e)
+            unlinkedEntries.push(e)
+          }
+        } catch(err) {
+          console.log(err)
+          continue
         }
       }
     }
